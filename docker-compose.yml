@@ -1,0 +1,10 @@
+services:
+  laxball:
+    build:
+      context: .
+      network: host
+    image: laxball:latest
+    container_name: laxball
+    ports:
+      - "7777:7777"   # change the left number to use a different port on the Pi
+    restart: unless-stopped

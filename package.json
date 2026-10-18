@@ -1,0 +1,14 @@
+{
+  "name": "laxball",
+  "version": "1.0.0",
+  "description": "A HaxBall-style 2D multiplayer lacrosse game for your local network",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "sim": "node test/sim.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}
