@@ -109,3 +109,28 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
   .teams { grid-template-columns: 1fr; }
   .col { min-height: 0; }
 }
+
+/* chat badge (unread messages while chat is hidden) */
+#chatBadge { position: fixed; left: 10px; bottom: 10px; z-index: 7; pointer-events: none; font-size: 12px;
+  background: rgba(15, 20, 23, .78); border: 1px solid #0d1215; border-radius: 3px; padding: 4px 8px; color: var(--accent); }
+#chat:not(.hidden) ~ #chatBadge { display: none; }
+
+/* click-to-aim prompt */
+#lockHint { position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%); z-index: 6; pointer-events: none;
+  background: rgba(0,0,0,.6); color: #fff; padding: 6px 16px; border-radius: 4px; font-weight: 600; }
+canvas#game.aiming { cursor: none; }
+
+.btn.small { font-size: 13px; }
+
+/* crosshair settings */
+#xhairPanel summary { cursor: pointer; font-weight: 600; color: var(--text); padding: 2px 0; }
+.xhair { display: flex; gap: 16px; padding-top: 10px; flex-wrap: wrap; }
+#xhairPreview { width: 140px; height: 140px; border-radius: 4px; border: 1px solid var(--line); flex: none; }
+.xhairOpts { flex: 1; min-width: 240px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; align-items: center; }
+.xhairOpts label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12px; }
+.xhairOpts label.chk { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 13px; }
+.xhairOpts select { padding: 4px 6px; }
+.xhairOpts input[type=range] { width: 100%; accent-color: var(--accent); }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #0d1215; cursor: pointer; padding: 0; }
+.swatch.on { outline: 2px solid #fff; outline-offset: 1px; }

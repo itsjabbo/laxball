@@ -24,13 +24,15 @@
   <div id="banner" class="hidden"><div id="bannerBig"></div><div id="bannerSmall"></div></div>
   <div id="pausedNote" class="hidden">PAUSED</div>
 
-  <!-- chat -->
-  <div id="chat">
+  <!-- chat: hidden until you press "/" -->
+  <div id="chat" class="hidden">
     <div id="chatlog"></div>
-    <input id="chatinput" maxlength="140" autocomplete="off" placeholder="Press Enter to chat">
+    <input id="chatinput" maxlength="140" autocomplete="off" placeholder="Type a message · Enter to send · Esc to close">
   </div>
+  <div id="chatBadge" class="hidden"></div>
 
-  <div id="hint" class="hidden">Esc: room menu</div>
+  <div id="lockHint" class="hidden">Click to lock your aim</div>
+  <div id="hint" class="hidden">Esc menu · / chat · F fullscreen</div>
 
   <!-- join screen -->
   <div id="joinScreen" class="overlay">
@@ -50,6 +52,7 @@
       <div class="roomHead">
         <div class="logo small">Lax<span>Ball</span></div>
         <div id="roomState" class="muted"></div>
+        <button id="fsBtn" class="btn ghost small" title="Toggle fullscreen (F)">⛶ Fullscreen</button>
         <button id="closeRoom" class="btn ghost hidden" title="Back to the game (Esc)">✕</button>
       </div>
 
@@ -95,13 +98,44 @@
 
       <div class="roomFoot">
         <div class="controls">
-          <b>Move</b> Arrows / WASD &nbsp; <b>Throw</b> hold &amp; release Space (longer = harder) &nbsp;
-          <b>Check</b> X or Shift &nbsp; <b>Chat</b> Enter &nbsp; <b>Menu</b> Esc
+          <b>Move</b> Arrows / WASD &nbsp; <b>Throw</b> hold &amp; release Space or left click (longer = harder) &nbsp;
+          <b>Check</b> X, Shift or right click &nbsp; <b>Chat</b> / &nbsp; <b>Fullscreen</b> F &nbsp; <b>Menu</b> Esc
         </div>
         <div class="opts">
-          <label><input type="checkbox" id="optMouse"> Aim with mouse (click = throw, right‑click = check)</label>
+          <label><input type="checkbox" id="optMouse"> Aim with mouse (cursor locks to the game)</label>
           <label><input type="checkbox" id="optSound" checked> Sound</label>
         </div>
+
+        <details id="xhairPanel">
+          <summary>Crosshair</summary>
+          <div class="xhair">
+            <canvas id="xhairPreview" width="140" height="140"></canvas>
+            <div class="xhairOpts">
+              <label>Shape
+                <select id="xhShape">
+                  <option value="cross">Cross</option>
+                  <option value="crossdot">Cross + dot</option>
+                  <option value="tshape">T-shape</option>
+                  <option value="x">X</option>
+                  <option value="dot">Dot</option>
+                  <option value="circle">Circle</option>
+                  <option value="circledot">Circle + dot</option>
+                  <option value="chevron">Chevron</option>
+                  <option value="square">Square</option>
+                  <option value="triangle">Triangle</option>
+                </select>
+              </label>
+              <div class="swatches" id="xhColors"></div>
+              <label>Size <input type="range" id="xhSize" min="3" max="24" step="1"></label>
+              <label>Thickness <input type="range" id="xhThick" min="1" max="6" step="0.5"></label>
+              <label>Gap <input type="range" id="xhGap" min="0" max="12" step="1"></label>
+              <label>Opacity <input type="range" id="xhAlpha" min="0.2" max="1" step="0.05"></label>
+              <label>Mouse sensitivity <input type="range" id="xhSens" min="0.2" max="3" step="0.1"></label>
+              <label class="chk"><input type="checkbox" id="xhOutline"> Black outline</label>
+              <button type="button" class="btn" id="xhReset">Reset</button>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   </div>

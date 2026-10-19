@@ -22,12 +22,28 @@
   let clockOffset = null;
   let lastHud = '';
   let bannerTimer = null;
-  let mouseAim = localStorage.getItem('lax.mouseAim') === '1';
+  let mouseAim = localStorage.getItem('lax.mouseAim') !== '0'; // on by default
   let soundOn = localStorage.getItem('lax.sound') !== '0';
   let mouse = { x: 0, y: 0, buttons: 0 };
   let lastAimSent = null;
-  let view = { scale: 1, ox: 0, oy: 0 };
+  let view = { scale: 1, ox: 0, oy: 0, dpr: 1 };
   let flashes = []; // short-lived text pops on the field
+
+  // Aim: the crosshair sits at an offset from your player (field units) and can't go
+  // further than AIM_RADIUS_FRAC x the field length (0.5 = half the field).
+  const AIM_RADIUS_FRAC = 0.5;
+  let aimOff = { x: 120, y: 0 };
+  let pointerLocked = false;
+  let menuOpenedByUs = false; // set when we release the pointer lock ourselves
+  let lastLockLoss = -1e9;
+  let chatOpen = false, unread = 0;
+  const aimRadius = () => (cfg ? cfg.hw * 2 : 1120) * AIM_RADIUS_FRAC;
+
+  // Crosshair settings (saved per browser)
+  const XH_DEFAULT = { shape: 'crossdot', color: '#00ff66', size: 9, thick: 2, gap: 4, alpha: 1, outline: true, sens: 1 };
+  const XH_COLORS = ['#00ff66', '#ff2d2d', '#00e5ff', '#ffee00', '#ffffff', '#ff3df5', '#ff8c00', '#9b6bff'];
+  let xh = { ...XH_DEFAULT };
+  try { xh = { ...XH_DEFAULT, ...JSON.parse(localStorage.getItem('lax.crosshair') || '{}') }; } catch { /* defaults */ }
 
   // ---------- join ----------
   $('nick').value = localStorage.getItem('lax.name') || '';
@@ -43,8 +59,51 @@
     localStorage.setItem('lax.name', name);
     localStorage.setItem('lax.avatar', avatar);
     unlockAudio();
+    enterFullscreen();
     connect(name, avatar);
   });
+
+  // ---------- fullscreen & pointer lock ----------
+  function enterFullscreen() {
+    const el = document.documentElement;
+    if (document.fullscreenElement || !el.requestFullscreen) return;
+    el.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+      // In Chrome/Edge this lets a short Esc press open our menu; holding Esc still exits fullscreen.
+      if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {});
+    }).catch(() => {});
+  }
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else enterFullscreen();
+  }
+  function canLockAim() {
+    return mouseAim && room.state === 'playing' && roomScreen.classList.contains('hidden') && !chatOpen && myTeam() !== 0;
+  }
+  function lockAim() {
+    if (!canLockAim() || pointerLocked || !canvas.requestPointerLock) return;
+    try {
+      const r = canvas.requestPointerLock({ unadjustedMovement: true });
+      if (r && r.catch) r.catch(() => { try { canvas.requestPointerLock(); } catch { /* needs a click */ } });
+    } catch { /* needs a click */ }
+  }
+  function unlockAim() {
+    if (document.pointerLockElement) { menuOpenedByUs = true; document.exitPointerLock(); }
+  }
+  function myTeam() { const p = roster.get(myId); return p ? p.team : 0; }
+  document.addEventListener('pointerlockchange', () => {
+    const was = pointerLocked;
+    pointerLocked = document.pointerLockElement === canvas;
+    if (pointerLocked) mouse.moved = false; // don't snap back to the old real-mouse spot later
+    if (was && !pointerLocked) {
+      lastLockLoss = performance.now();
+      releaseKeys();
+      if (menuOpenedByUs) { menuOpenedByUs = false; return; }
+      // The browser released the lock (usually Esc): treat it like opening the menu.
+      if (chatOpen) closeChat();
+      else if (room.state === 'playing') roomScreen.classList.remove('hidden');
+    }
+  });
+  $('fsBtn').addEventListener('click', toggleFullscreen);
 
   function connect(name, avatar) {
     $('joinStatus').textContent = 'Connecting…';
@@ -76,7 +135,8 @@
         room = m;
         roster = new Map(m.players.map((p) => [p.id, p]));
         if (prevState !== 'playing' && m.state === 'playing') { roomScreen.classList.add('hidden'); snaps = []; clockOffset = null; }
-        if (prevState === 'playing' && m.state !== 'playing') { roomScreen.classList.remove('hidden'); snaps = []; }
+        if (prevState === 'playing' && m.state !== 'playing') { unlockAim(); roomScreen.classList.remove('hidden'); snaps = []; }
+        if (myTeam() === 0) unlockAim();
         $('hud').classList.toggle('hidden', m.state !== 'playing');
         $('hint').classList.toggle('hidden', m.state !== 'playing');
         renderRoom();
@@ -148,18 +208,39 @@
     chatlog.appendChild(div);
     while (chatlog.children.length > 120) chatlog.firstChild.remove();
     chatlog.scrollTop = chatlog.scrollHeight;
+    if (!chatOpen && !m.sys) { unread++; updateChatBadge(); }
+  }
+  function updateChatBadge() {
+    const b = $('chatBadge');
+    b.textContent = `${unread} new message${unread === 1 ? '' : 's'} · press / to read`;
+    b.classList.toggle('hidden', unread === 0 || chatOpen);
+  }
+  function openChat() {
+    if (!myId) return;
+    chatOpen = true;
+    unread = 0; updateChatBadge();
+    releaseKeys();
+    $('chat').classList.remove('hidden');
+    chatlog.scrollTop = chatlog.scrollHeight;
+    chatinput.focus();
+  }
+  function closeChat() {
+    if (!chatOpen) return;
+    chatOpen = false;
+    chatinput.value = '';
+    $('chat').classList.add('hidden');
+    if (document.activeElement === chatinput) chatinput.blur();
   }
   chatinput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       const v = chatinput.value.trim();
       if (v) send({ t: 'chat', m: v });
-      chatinput.value = '';
-      chatinput.blur();
+      closeChat();
       e.preventDefault();
-    } else if (e.key === 'Escape') { chatinput.blur(); e.preventDefault(); }
+    } else if (e.key === 'Escape') { closeChat(); e.preventDefault(); }
     e.stopPropagation();
   });
-  chatinput.addEventListener('focus', () => releaseKeys());
+  chatinput.addEventListener('blur', () => setTimeout(closeChat, 0));
 
   // ---------- room / lobby ----------
   const isAdmin = () => room.admin === myId;
@@ -221,7 +302,7 @@
   $('removeBots').addEventListener('click', () => send({ t: 'removeBots' }));
   $('startBtn').addEventListener('click', () => send({ t: room.state === 'playing' ? 'stop' : 'start' }));
   $('pauseBtn').addEventListener('click', () => send({ t: 'pause' }));
-  $('closeRoom').addEventListener('click', () => roomScreen.classList.add('hidden'));
+  $('closeRoom').addEventListener('click', () => { roomScreen.classList.add('hidden'); lockAim(); });
   const sendSettings = () => send({ t: 'settings', scoreLimit: +$('scoreLimit').value, timeLimit: +$('timeLimit').value });
   $('scoreLimit').addEventListener('change', sendSettings);
   $('timeLimit').addEventListener('change', sendSettings);
@@ -230,10 +311,11 @@
     localStorage.setItem('lax.mouseAim', mouseAim ? '1' : '0');
     send({ t: 'aimMode', on: mouseAim });
     lastAimSent = null;
-    canvas.style.cursor = mouseAim ? 'crosshair' : '';
+    if (!mouseAim) unlockAim();
+    canvas.classList.toggle('aiming', mouseAim);
   });
   $('optSound').addEventListener('change', (e) => { soundOn = e.target.checked; localStorage.setItem('lax.sound', soundOn ? '1' : '0'); });
-  canvas.style.cursor = mouseAim ? 'crosshair' : '';
+  canvas.classList.toggle('aiming', mouseAim);
 
   // ---------- input ----------
   const KEYMAP = {
@@ -253,14 +335,28 @@
     if (k !== sentBits) { sentBits = k; send({ t: 'input', k }); }
   }
   function releaseKeys() { down.clear(); mouse.buttons = 0; pushInput(); }
-  const typing = () => document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
+  // Only text boxes swallow keys; sliders and checkboxes in the menu don't.
+  const typing = () => {
+    const el = document.activeElement;
+    if (!el) return false;
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+    return el.tagName === 'INPUT' && ['text', 'search', ''].includes(el.type);
+  };
 
   window.addEventListener('keydown', (e) => {
     unlockAudio();
     if (!myId || typing()) return;
-    if (e.key === 'Enter') { chatinput.focus(); e.preventDefault(); return; }
+    if (e.key === '/') { e.preventDefault(); openChat(); return; }
+    if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey) { toggleFullscreen(); return; }
     if (e.key === 'Escape') {
-      if (room.state === 'playing') { roomScreen.classList.toggle('hidden'); releaseKeys(); }
+      e.preventDefault();
+      // Same Esc press that made the browser drop the cursor lock: the menu is already open.
+      if (performance.now() - lastLockLoss < 300) return;
+      if (room.state === 'playing') {
+        if (roomScreen.classList.contains('hidden')) { roomScreen.classList.remove('hidden'); unlockAim(); }
+        else { roomScreen.classList.add('hidden'); lockAim(); }
+        releaseKeys();
+      }
       return;
     }
     if (e.code === 'KeyP' && isAdmin() && room.state === 'playing') { send({ t: 'pause' }); return; }
@@ -275,11 +371,33 @@
     if (KEYMAP[e.code]) { down.delete(e.code); pushInput(); }
   });
   window.addEventListener('blur', releaseKeys);
-  canvas.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
+
+  function clampAim() {
+    const R = aimRadius(), l = Math.hypot(aimOff.x, aimOff.y);
+    if (l > R) { aimOff.x *= R / l; aimOff.y *= R / l; }
+  }
+  let lockErrorAt = -1e9;
+  document.addEventListener('pointerlockerror', () => { lockErrorAt = performance.now(); });
+  document.addEventListener('mousemove', (e) => {
+    if (pointerLocked) {
+      // Locked: the mouse moves the crosshair relative to your player.
+      // Ignore bogus jumps some browsers emit right after locking (a real flick is far smaller per event).
+      if (Math.abs(e.movementX) > 400 || Math.abs(e.movementY) > 400) return;
+      const k = xh.sens * view.dpr / view.scale;
+      aimOff.x += e.movementX * k; aimOff.y += e.movementY * k;
+      clampAim();
+    } else {
+      mouse.x = e.clientX; mouse.y = e.clientY; mouse.moved = true;
+    }
+  });
   canvas.addEventListener('mousedown', (e) => {
     unlockAudio();
-    if (document.activeElement === chatinput) chatinput.blur();
+    if (chatOpen) closeChat();
     if (!mouseAim) return;
+    if (!pointerLocked && canLockAim() && performance.now() - lockErrorAt > 5000) {
+      lockAim(); // this click only grabs the cursor; it doesn't throw
+      return;
+    }
     mouse.buttons |= e.button === 2 ? 2 : e.button === 0 ? 1 : 0;
     pushInput();
   });
@@ -547,13 +665,117 @@
     $('ot').classList.toggle('hidden', !st.ot);
   }
 
+  // Works out the crosshair offset from your player, sends the aim angle, and returns your player.
   function sendAim(st) {
-    if (!mouseAim || !st || !myId) return;
+    if (!mouseAim || !st || !myId) return null;
     const me = st.p.find((p) => p[0] === myId);
-    if (!me) return;
-    const s = toScreen(me[1], me[2]);
-    const a = Math.atan2(mouse.y - s.y, mouse.x - s.x);
-    if (lastAimSent === null || Math.abs(a - lastAimSent) > 0.004) { lastAimSent = a; send({ t: 'aim', a }); }
+    if (!me) return null;
+    if (!pointerLocked && mouse.moved) {
+      // Not locked (menu open, or lock refused): follow the real mouse, still within the radius.
+      const s = toScreen(me[1], me[2]);
+      aimOff.x = (mouse.x - s.x) * view.dpr / view.scale;
+      aimOff.y = (mouse.y - s.y) * view.dpr / view.scale;
+      clampAim();
+    }
+    if (Math.hypot(aimOff.x, aimOff.y) > 0.5) {
+      const a = Math.atan2(aimOff.y, aimOff.x);
+      if (lastAimSent === null || Math.abs(a - lastAimSent) > 0.004) { lastAimSent = a; send({ t: 'aim', a }); }
+    }
+    return me;
+  }
+
+  // ---------- crosshair ----------
+  function drawCrosshair(c, x, y, o) {
+    const s = o.size, t = o.thick, g = o.gap;
+    c.save();
+    c.globalAlpha = o.alpha;
+    c.lineCap = 'butt'; c.lineJoin = 'miter';
+    const seg = (x1, y1, x2, y2) => { c.moveTo(x + x1, y + y1); c.lineTo(x + x2, y + y2); };
+    const stroke = (build) => {
+      if (o.outline) { c.beginPath(); build(); c.strokeStyle = '#000'; c.lineWidth = t + 2; c.stroke(); }
+      c.beginPath(); build(); c.strokeStyle = o.color; c.lineWidth = t; c.stroke();
+    };
+    const dot = (r) => {
+      if (o.outline) { c.beginPath(); c.arc(x, y, r + 1, 0, Math.PI * 2); c.fillStyle = '#000'; c.fill(); }
+      c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fillStyle = o.color; c.fill();
+    };
+    const cross = (top) => stroke(() => {
+      if (top) seg(0, -g, 0, -g - s);
+      seg(0, g, 0, g + s); seg(-g, 0, -g - s, 0); seg(g, 0, g + s, 0);
+    });
+    const ring = () => stroke(() => c.arc(x, y, Math.max(3, g + s * 0.6), 0, Math.PI * 2));
+    const centerDot = () => dot(Math.max(1.2, t * 0.8));
+    switch (o.shape) {
+      case 'cross': cross(true); break;
+      case 'crossdot': cross(true); centerDot(); break;
+      case 'tshape': cross(false); break;
+      case 'x': {
+        const d = Math.SQRT1_2;
+        stroke(() => {
+          seg(g * d, g * d, (g + s) * d, (g + s) * d); seg(-g * d, g * d, -(g + s) * d, (g + s) * d);
+          seg(g * d, -g * d, (g + s) * d, -(g + s) * d); seg(-g * d, -g * d, -(g + s) * d, -(g + s) * d);
+        });
+        break;
+      }
+      case 'dot': dot(Math.max(1.5, s / 3)); break;
+      case 'circle': ring(); break;
+      case 'circledot': ring(); centerDot(); break;
+      case 'chevron': stroke(() => { c.moveTo(x - s, y + g + s * 0.7); c.lineTo(x, y + g); c.lineTo(x + s, y + g + s * 0.7); }); break;
+      case 'square': { const h = g + s / 2; stroke(() => c.rect(x - h, y - h, h * 2, h * 2)); break; }
+      case 'triangle': {
+        const r = g + s * 0.6;
+        stroke(() => {
+          for (let i = 0; i < 3; i++) {
+            const a = -Math.PI / 2 + i * (Math.PI * 2 / 3);
+            if (i === 0) c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r); else c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+          }
+          c.closePath();
+        });
+        break;
+      }
+      default: cross(true);
+    }
+    c.restore();
+  }
+
+  const xhPreview = $('xhairPreview'), xpc = xhPreview.getContext('2d');
+  function drawXhairPreview() {
+    const dpr = window.devicePixelRatio || 1;
+    if (xhPreview.width !== 140 * dpr) { xhPreview.width = 140 * dpr; xhPreview.height = 140 * dpr; }
+    xpc.setTransform(dpr, 0, 0, dpr, 0, 0);
+    xpc.fillStyle = '#718c5a'; xpc.fillRect(0, 0, 140, 140);
+    xpc.fillStyle = '#6a8453'; xpc.fillRect(70, 0, 70, 140);
+    drawCrosshair(xpc, 70, 70, xh);
+  }
+  function saveXhair() {
+    try { localStorage.setItem('lax.crosshair', JSON.stringify(xh)); } catch { /* not saved */ }
+    drawXhairPreview();
+  }
+  function syncXhairUI() {
+    $('xhShape').value = xh.shape;
+    $('xhSize').value = xh.size; $('xhThick').value = xh.thick; $('xhGap').value = xh.gap;
+    $('xhAlpha').value = xh.alpha; $('xhSens').value = xh.sens; $('xhOutline').checked = xh.outline;
+    document.querySelectorAll('.swatch').forEach((b) => b.classList.toggle('on', b.dataset.c === xh.color));
+    drawXhairPreview();
+  }
+  for (const col of XH_COLORS) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'swatch'; b.dataset.c = col; b.style.background = col; b.title = col;
+    b.addEventListener('click', () => { xh.color = col; syncXhairUI(); saveXhair(); });
+    $('xhColors').appendChild(b);
+  }
+  $('xhShape').addEventListener('change', (e) => { xh.shape = e.target.value; saveXhair(); });
+  for (const [id, key] of [['xhSize', 'size'], ['xhThick', 'thick'], ['xhGap', 'gap'], ['xhAlpha', 'alpha'], ['xhSens', 'sens']]) {
+    $(id).addEventListener('input', (e) => { xh[key] = parseFloat(e.target.value); saveXhair(); });
+  }
+  $('xhOutline').addEventListener('change', (e) => { xh.outline = e.target.checked; saveXhair(); });
+  $('xhReset').addEventListener('click', () => { xh = { ...XH_DEFAULT }; syncXhairUI(); saveXhair(); });
+  syncXhairUI();
+
+  let lockHintShown = false;
+  function updateLockHint() {
+    const show = canLockAim() && !pointerLocked;
+    if (show !== lockHintShown) { lockHintShown = show; $('lockHint').classList.toggle('hidden', !show); }
   }
 
   function frame() {
@@ -576,10 +798,22 @@
       for (const p of st.p) { drawCharge(p); drawName(p, roster.get(p[0])); }
       drawFlashes(performance.now());
       updateHud(st);
-      sendAim(st);
+      const me = sendAim(st);
+      if (me && roomScreen.classList.contains('hidden')) {
+        // faint ring when the crosshair is held at the edge of the aim radius
+        const R = aimRadius();
+        if (Math.hypot(aimOff.x, aimOff.y) >= R - 1) {
+          ctx.beginPath(); ctx.arc(me[1], me[2], R, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2; ctx.stroke();
+        }
+        const s = toScreen(me[1] + aimOff.x, me[2] + aimOff.y);
+        ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+        drawCrosshair(ctx, s.x, s.y, xh);
+      }
     } else {
       drawBall([0, 0]);
     }
+    updateLockHint();
   }
   function drawIdle() {
     // decorative field behind the join screen
