@@ -15,8 +15,10 @@ const MIME = {
 };
 
 const server = http.createServer((req, res) => {
-  const url = decodeURIComponent((req.url || '/').split('?')[0]);
+  let url;
+  try { url = decodeURIComponent((req.url || '/').split('?')[0]); } catch { res.writeHead(400); res.end(); return; }
   if (url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ok'); return; }
+  if (url === '/') log('page', visitorOf(req));
   const rel = url === '/' ? 'index.html' : url.replace(/^\/+/, '');
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403); res.end(); return; }
@@ -31,6 +33,24 @@ const game = new Game();
 const wss = new WebSocketServer({ server, maxPayload: 4096 });
 const clients = new Map(); // ws -> playerId
 let adminId = null;
+
+// ---------- access log ----------
+// One JSON line per event on stdout, so it shows in `docker compose logs` and in Portainer.
+// tailscale serve passes the visitor's identity in headers; we record them when present.
+function log(ev, fields = {}) {
+  console.log(JSON.stringify({ time: new Date().toISOString(), ev, ...fields }));
+}
+function visitorOf(req) {
+  const h = req.headers;
+  const fwd = String(h['x-forwarded-for'] || '').split(',')[0].trim();
+  return {
+    ip: fwd || req.socket.remoteAddress,
+    user: h['tailscale-user-login'] || undefined,
+    userName: h['tailscale-user-name'] || undefined,
+    agent: String(h['user-agent'] || '').slice(0, 120) || undefined,
+  };
+}
+let connSeq = 0;
 
 function send(ws, msg) { if (ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); }
 function broadcast(msg) {
@@ -52,8 +72,12 @@ function cleanAvatar(s) {
   return Array.from(cleanText(s, 12)).slice(0, 2).join('');
 }
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   let me = null;
+  const conn = ++connSeq;
+  const visitor = visitorOf(req);
+  const openedAt = Date.now();
+  log('connect', { conn, ...visitor });
 
   ws.on('message', (raw) => {
     let m;
@@ -67,6 +91,7 @@ wss.on('connection', (ws) => {
       clients.set(ws, me.id);
       send(ws, { t: 'welcome', id: me.id, cfg: CFG, phys: { checkTicks: PHYS.checkTicks } });
       sysChat(`${name} joined.`);
+      log('join', { conn, player: me.id, name, ip: visitor.ip, user: visitor.user });
       pickAdmin();
       return;
     }
@@ -93,19 +118,27 @@ wss.on('connection', (ws) => {
           send(ws, { t: 'chat', sys: true, m: `Avatar set to "${me.avatar}".` });
         } else {
           broadcast({ t: 'chat', from: me.name, team: me.team, m: text });
+          log('chat', { conn, name: me.name, text });
         }
         break;
       }
       case 'team': {
         const id = m.id | 0, team = m.team | 0;
-        if (id === me.id || isAdmin) game.setTeam(id, team);
+        if (id === me.id || isAdmin) {
+          game.setTeam(id, team);
+          const p = game.players.get(id);
+          if (p) log('team', { conn, by: me.name, player: p.name, team: ['spectators', 'red', 'blue'][team] || team });
+        }
         break;
       }
       case 'start':
-        if (isAdmin && game.start()) sysChat('Game started. Good luck!');
+        if (isAdmin && game.start()) {
+          sysChat('Game started. Good luck!');
+          log('game-start', { by: me.name, players: game.activePlayers().map((p) => p.name) });
+        }
         break;
       case 'stop':
-        if (isAdmin && game.state === 'playing') { game.stop(); sysChat('Game stopped.'); }
+        if (isAdmin && game.state === 'playing') { game.stop(); sysChat('Game stopped.'); log('game-stop', { by: me.name }); }
         break;
       case 'pause':
         if (isAdmin && game.state === 'playing') {
@@ -131,6 +164,7 @@ wss.on('connection', (ws) => {
       case 'kick': {
         const target = game.players.get(m.id | 0);
         if (!isAdmin || !target || target.id === me.id) break;
+        log('kick', { by: me.name, player: target.name, bot: target.bot });
         if (target.bot) { game.removePlayer(target.id); break; }
         for (const [sock, pid] of clients) if (pid === target.id) { send(sock, { t: 'kicked' }); sock.close(); }
         break;
@@ -143,6 +177,7 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     clients.delete(ws);
+    log('disconnect', { conn, name: me ? me.name : undefined, ip: visitor.ip, secs: Math.round((Date.now() - openedAt) / 1000) });
     if (me) {
       game.removePlayer(me.id);
       sysChat(`${me.name} left.`);
@@ -167,7 +202,7 @@ setInterval(() => {
     acc -= STEP_MS;
     const wasPlaying = game.state === 'playing';
     game.step();
-    for (const m of game.messages) sysChat(m);
+    for (const m of game.messages) { sysChat(m); log('game', { msg: m }); }
     loopCount++;
     if (game.state === 'playing') {
       // while paused, a slow heartbeat is enough
@@ -180,5 +215,5 @@ setInterval(() => {
 }, 4);
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`LaxBall running on http://0.0.0.0:${PORT}`);
+  log('server-start', { port: PORT });
 });

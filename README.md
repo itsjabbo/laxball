@@ -68,3 +68,15 @@ Open chat with `/` and type `/avatar 😎` to change your avatar.
 Gameplay numbers live in `server/constants.js` (player speed, throw power range, how long a full charge takes, catch limit, check range, field and goal size). Change them, then run `docker compose up -d --build`.
 
 `node test/sim.js 3 5` plays a 3-on-3 bot match for 5 simulated minutes and prints the stats, which is handy for checking a change.
+
+## Access log
+
+The server writes one JSON line per event to its output: `page`, `connect`, `join`, `team`, `chat`, `game-start`, `game-stop`, `game` (goals, results), `kick`, `disconnect` (with seconds connected). When players arrive through `tailscale serve`, each line includes their Tailscale address and, when Tailscale provides it, their account (`user`).
+
+```bash
+sudo docker logs -f laxball                                   # live
+sudo docker logs laxball 2>&1 | grep '"ev":"join"'            # who joined
+sudo docker logs --since 24h laxball 2>&1 | grep -c '"ev":"connect"'   # connections in the last day
+```
+
+Logs are also visible in Portainer under Containers → laxball → Logs.
