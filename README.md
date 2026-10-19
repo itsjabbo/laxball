@@ -40,15 +40,19 @@ The first person to join is the room admin: they add bots, set the score and tim
 | Action | Keys |
 |---|---|
 | Move | Arrow keys or WASD |
-| Throw / pass / shoot | Hold **Space**, release to throw. A quick tap is a soft pass; about 1.1 s of holding is a full-power shot. The ring around your player shows the power. |
-| Check (knock the ball loose) | **X** or **Shift** |
-| Chat | Enter |
-| Room menu | Esc |
+| Aim | Mouse (crosshair). Click the field once to lock the cursor to the game |
+| Throw / pass / shoot | Hold **left click** or **Space**, release to throw. A quick tap is a soft pass; about 1.1 s of holding is a full-power shot. The ring around your player shows the power. |
+| Check (knock the ball loose) | **Right click**, **X** or **Shift** |
+| Chat | **/** opens chat, Enter sends, Esc closes (hidden otherwise; a badge shows unread messages) |
+| Fullscreen | **F** (the game also goes fullscreen when you join) |
+| Room menu | Esc (also releases the cursor) |
 | Pause (admin) | P |
 
-Your stick points the way you're moving, just like kicking in HaxBall. If you prefer, tick **Aim with mouse** in the room menu: the stick follows the cursor, left click throws (hold to charge) and right click checks.
+Mouse aim is on by default: the stick points at your crosshair, which follows your player and can reach up to half the field's length away (a faint ring shows the limit). Untick **Aim with mouse** in the room menu to play keyboard-only, HaxBall style, where the stick points the way you move.
 
-Type `/avatar 😎` in chat to change your avatar.
+**Crosshair:** open the room menu (Esc) and expand **Crosshair** to pick a shape (cross, cross + dot, T, X, dot, circle, circle + dot, chevron, square, triangle), a colour, size, thickness, gap, opacity, outline and mouse sensitivity. Settings are saved in your browser. To change the aim limit, edit `AIM_RADIUS_FRAC` near the top of `public/client.js` (0.5 = half the field).
+
+Open chat with `/` and type `/avatar 😎` to change your avatar.
 
 ### Rules
 

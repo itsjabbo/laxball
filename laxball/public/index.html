@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LaxBall</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- scoreboard -->
+  <div id="hud" class="hidden">
+    <div class="sb">
+      <span class="chip red"></span><span id="scoreR">0</span>
+      <span class="dash">-</span>
+      <span id="scoreB">0</span><span class="chip blue"></span>
+      <span id="clock">00:00</span>
+      <span id="ot" class="hidden">OT</span>
+    </div>
+  </div>
+
+  <div id="banner" class="hidden"><div id="bannerBig"></div><div id="bannerSmall"></div></div>
+  <div id="pausedNote" class="hidden">PAUSED</div>
+
+  <!-- chat: hidden until you press "/" -->
+  <div id="chat" class="hidden">
+    <div id="chatlog"></div>
+    <input id="chatinput" maxlength="140" autocomplete="off" placeholder="Type a message · Enter to send · Esc to close">
+  </div>
+  <div id="chatBadge" class="hidden"></div>
+
+  <div id="lockHint" class="hidden">Click to lock your aim</div>
+  <div id="hint" class="hidden">Esc menu · / chat · F fullscreen</div>
+
+  <!-- join screen -->
+  <div id="joinScreen" class="overlay">
+    <form id="joinForm" class="panel join">
+      <div class="logo">Lax<span>Ball</span></div>
+      <p class="tag">2D lacrosse for your local network</p>
+      <label>Nickname<input id="nick" maxlength="20" required autocomplete="off"></label>
+      <label>Avatar <small>(1–2 characters, optional)</small><input id="avatar" maxlength="4" autocomplete="off"></label>
+      <button type="submit" class="btn primary">Join game</button>
+      <div id="joinStatus" class="muted"></div>
+    </form>
+  </div>
+
+  <!-- room / lobby -->
+  <div id="roomScreen" class="overlay hidden">
+    <div class="panel room">
+      <div class="roomHead">
+        <div class="logo small">Lax<span>Ball</span></div>
+        <div id="roomState" class="muted"></div>
+        <button id="fsBtn" class="btn ghost small" title="Toggle fullscreen (F)">⛶ Fullscreen</button>
+        <button id="closeRoom" class="btn ghost hidden" title="Back to the game (Esc)">✕</button>
+      </div>
+
+      <div class="teams">
+        <div class="col red" data-team="1">
+          <div class="colHead">Red</div>
+          <ul class="plist" data-team="1"></ul>
+          <div class="colBtns">
+            <button class="btn joinTeam" data-team="1">Join</button>
+            <button class="btn adminOnly addBot" data-team="1" title="Add a computer player">+ Bot</button>
+          </div>
+        </div>
+        <div class="col spec" data-team="0">
+          <div class="colHead">Spectators</div>
+          <ul class="plist" data-team="0"></ul>
+          <div class="colBtns">
+            <button class="btn joinTeam" data-team="0">Spectate</button>
+          </div>
+        </div>
+        <div class="col blue" data-team="2">
+          <div class="colHead">Blue</div>
+          <ul class="plist" data-team="2"></ul>
+          <div class="colBtns">
+            <button class="btn joinTeam" data-team="2">Join</button>
+            <button class="btn adminOnly addBot" data-team="2" title="Add a computer player">+ Bot</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="roomCtl">
+        <label class="adminOnly">Score limit
+          <select id="scoreLimit"><option value="0">None</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>7</option><option>10</option></select>
+        </label>
+        <label class="adminOnly">Time limit
+          <select id="timeLimit"><option value="0">None</option><option value="1">1 min</option><option value="2">2 min</option><option value="3">3 min</option><option value="5">5 min</option><option value="7">7 min</option><option value="10">10 min</option></select>
+        </label>
+        <button id="removeBots" class="btn adminOnly">Remove bots</button>
+        <div class="spacer"></div>
+        <button id="pauseBtn" class="btn adminOnly hidden">Pause</button>
+        <button id="startBtn" class="btn primary adminOnly">Start game</button>
+        <div id="notAdmin" class="muted">Waiting for the admin to start…</div>
+      </div>
+
+      <div class="roomFoot">
+        <div class="controls">
+          <b>Move</b> Arrows / WASD &nbsp; <b>Throw</b> hold &amp; release Space or left click (longer = harder) &nbsp;
+          <b>Check</b> X, Shift or right click &nbsp; <b>Chat</b> / &nbsp; <b>Fullscreen</b> F &nbsp; <b>Menu</b> Esc
+        </div>
+        <div class="opts">
+          <label><input type="checkbox" id="optMouse"> Aim with mouse (cursor locks to the game)</label>
+          <label><input type="checkbox" id="optSound" checked> Sound</label>
+        </div>
+
+        <details id="xhairPanel">
+          <summary>Crosshair</summary>
+          <div class="xhair">
+            <canvas id="xhairPreview" width="140" height="140"></canvas>
+            <div class="xhairOpts">
+              <label>Shape
+                <select id="xhShape">
+                  <option value="cross">Cross</option>
+                  <option value="crossdot">Cross + dot</option>
+                  <option value="tshape">T-shape</option>
+                  <option value="x">X</option>
+                  <option value="dot">Dot</option>
+                  <option value="circle">Circle</option>
+                  <option value="circledot">Circle + dot</option>
+                  <option value="chevron">Chevron</option>
+                  <option value="square">Square</option>
+                  <option value="triangle">Triangle</option>
+                </select>
+              </label>
+              <div class="swatches" id="xhColors"></div>
+              <label>Size <input type="range" id="xhSize" min="3" max="24" step="1"></label>
+              <label>Thickness <input type="range" id="xhThick" min="1" max="6" step="0.5"></label>
+              <label>Gap <input type="range" id="xhGap" min="0" max="12" step="1"></label>
+              <label>Opacity <input type="range" id="xhAlpha" min="0.2" max="1" step="0.05"></label>
+              <label>Mouse sensitivity <input type="range" id="xhSens" min="0.2" max="3" step="0.1"></label>
+              <label class="chk"><input type="checkbox" id="xhOutline"> Black outline</label>
+              <button type="button" class="btn" id="xhReset">Reset</button>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <script src="client.js"></script>
+</body>
+</html>
