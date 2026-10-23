@@ -134,3 +134,45 @@ canvas#game.aiming { cursor: none; }
 .swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #0d1215; cursor: pointer; padding: 0; }
 .swatch.on { outline: 2px solid #fff; outline-offset: 1px; }
+
+/* stick response slider + controller status */
+.opts label.rng { gap: 6px; }
+.opts label.rng input { width: 140px; accent-color: var(--accent); }
+.small { font-size: 12px; }
+#padStatus { width: 100%; }
+#padToast { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 12; pointer-events: none;
+  background: rgba(0,0,0,.7); color: #fff; padding: 6px 14px; border-radius: 4px; font-weight: 600; }
+
+/* ---------- touch controls ---------- */
+body.touch canvas#game, #touchLayer { touch-action: none; }
+body.touch { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+#touchLayer { position: fixed; inset: 0; z-index: 8; display: flex; }
+.tzone { position: relative; flex: 1; height: 100%; }
+.tdivider { width: 0; border-left: 2px dashed rgba(255,255,255,.18); margin: 70px 0 20px; }
+.thint { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,.35);
+  font-size: 12px; letter-spacing: 2px; text-transform: uppercase; pointer-events: none; }
+.tbase { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.35); background: rgba(255,255,255,.08); display: none; pointer-events: none; }
+.tbase.on { display: block; }
+.tknob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%;
+  background: rgba(255,255,255,.35); border: 2px solid rgba(255,255,255,.6); }
+#touchAction { position: absolute; top: 64px; right: max(16px, env(safe-area-inset-right)); width: 84px; height: 84px; border-radius: 50%;
+  background: rgba(255,255,255,.14); border: 2px solid rgba(255,255,255,.5); color: rgba(255,255,255,.85);
+  font: 700 11px/1.25 "Segoe UI", Arial, sans-serif; letter-spacing: 1px; touch-action: none; }
+#touchAction.down { background: rgba(255,214,79,.35); border-color: #ffd54f; }
+#touchMenu { position: absolute; top: 12px; left: max(12px, env(safe-area-inset-left)); width: 44px; height: 44px; border-radius: 8px;
+  background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.3); color: #fff; font-size: 20px; }
+body.touch #hint, body.touch #lockHint { display: none !important; }
+body.touch #chat { top: 64px; bottom: auto; }
+
+@media (orientation: portrait) {
+  body.touch #touchLayer::after { content: "Turn your phone sideways for the best view"; position: absolute; left: 50%; top: 40%;
+    transform: translateX(-50%); background: rgba(0,0,0,.65); color: #fff; padding: 8px 14px; border-radius: 6px;
+    font-size: 14px; pointer-events: none; white-space: nowrap; }
+}
+@media (max-height: 500px) { #hud { top: 4px; } .sb { font-size: 16px; padding: 3px 10px; } #touchAction { top: 52px; } }
+
+/* aim stick charging a shot (thumb dragged past the ring with the ball) */
+.tbase.armed { border-color: #ffd54f; background: rgba(255,213,79,.18); box-shadow: 0 0 0 4px rgba(255,213,79,.25); }
+.tbase.armed .tknob { background: rgba(255,213,79,.6); border-color: #ffd54f; }
+.thint { white-space: nowrap; font-size: 11px; letter-spacing: 1px; }

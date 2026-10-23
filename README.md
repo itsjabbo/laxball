@@ -48,6 +48,32 @@ The first person to join is the room admin: they add bots, set the score and tim
 | Room menu | Esc (also releases the cursor) |
 | Pause (admin) | P |
 
+### PS4 / game controller
+
+Plug a PS4 (or Xbox) controller into your computer by USB or Bluetooth and press any button; the room menu shows "Controller connected".
+
+| Control | Button |
+|---|---|
+| Move | Left stick (push partway to move slower) |
+| Aim | Right stick |
+| Throw (hold to charge) | R1 |
+| Check | L1 |
+| Room menu | Options |
+
+Controllers need the game opened over **https** (your `https://…ts.net` address) or `localhost`; browsers block controllers on plain `http://` network addresses.
+
+### Phones and tablets
+
+Open the game on a phone and turn it sideways. Touch anywhere on the **left half** to get a movement joystick under your thumb, and anywhere on the **right half** for an aiming joystick.
+
+- **Shoot / pass:** while you have the ball, drag the aim stick **past its outer ring**. The ring turns yellow and the shot starts charging; let go to throw. The longer you stay past the ring, the harder the throw.
+- **Check:** **double-tap** anywhere on the right half when you don't have the ball.
+- The ☰ button opens the room menu.
+
+### Stick response
+
+In the room menu, **Stick response** goes from **Smooth** (the original feel: the stick swings round to your aim) to **Instant** (the stick points at your aim the moment you move). It's saved per browser.
+
 Mouse aim is on by default: the stick points at your crosshair, which follows your player and can reach up to half the field's length away (a faint ring shows the limit). Untick **Aim with mouse** in the room menu to play keyboard-only, HaxBall style, where the stick points the way you move.
 
 **Crosshair:** open the room menu (Esc) and expand **Crosshair** to pick a shape (cross, cross + dot, T, X, dot, circle, circle + dot, chevron, square, triangle), a colour, size, thickness, gap, opacity, outline and mouse sensitivity. Settings are saved in your browser. To change the aim limit, edit `AIM_RADIUS_FRAC` near the top of `public/client.js` (0.5 = half the field).

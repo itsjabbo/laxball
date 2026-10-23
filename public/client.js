@@ -37,6 +37,17 @@
   let menuOpenedByUs = false; // set when we release the pointer lock ourselves
   let lastLockLoss = -1e9;
   let chatOpen = false, unread = 0;
+
+  // Which device is aiming right now: 'mouse', 'pad' (game controller) or 'touch' (phone).
+  let aimSource = 'mouse';
+  let aimModeSent = null;
+  let padBits = 0, touchBits = 0;              // throw/check buttons held on the controller / touch button
+  let padMove = { x: 0, y: 0 }, touchMove = { x: 0, y: 0 }, lastMoveSent = '0,0';
+  let touchMode = false;
+  const PAD_AIM_DIST = 140;                     // how far ahead the crosshair sits when aiming with a stick
+  // Stick response: 0 = smoothed (original feel), 100 = the stick snaps straight to your aim.
+  let turnPct = 0;
+  try { turnPct = Math.max(0, Math.min(100, parseInt(localStorage.getItem('lax.turn') || '0', 10) || 0)); } catch { /* default */ }
   const aimRadius = () => (cfg ? cfg.hw * 2 : 1120) * AIM_RADIUS_FRAC;
 
   // Crosshair settings (saved per browser)
@@ -77,7 +88,7 @@
     else enterFullscreen();
   }
   function canLockAim() {
-    return mouseAim && room.state === 'playing' && roomScreen.classList.contains('hidden') && !chatOpen && myTeam() !== 0;
+    return mouseAim && !touchMode && aimSource === 'mouse' && room.state === 'playing' && roomScreen.classList.contains('hidden') && !chatOpen && myTeam() !== 0;
   }
   function lockAim() {
     if (!canLockAim() || pointerLocked || !canvas.requestPointerLock) return;
@@ -128,7 +139,8 @@
         myId = m.id; cfg = m.cfg; checkTicks = m.phys.checkTicks;
         joinScreen.classList.add('hidden');
         roomScreen.classList.remove('hidden');
-        if (mouseAim) send({ t: 'aimMode', on: true });
+        aimModeSent = null; updateAimMode();
+        send({ t: 'turn', v: turnPct / 100 });
         break;
       case 'room': {
         const prevState = room.state;
@@ -309,8 +321,7 @@
   $('optMouse').addEventListener('change', (e) => {
     mouseAim = e.target.checked;
     localStorage.setItem('lax.mouseAim', mouseAim ? '1' : '0');
-    send({ t: 'aimMode', on: mouseAim });
-    lastAimSent = null;
+    aimModeSent = null; updateAimMode();
     if (!mouseAim) unlockAim();
     canvas.classList.toggle('aiming', mouseAim);
   });
@@ -328,7 +339,7 @@
     let k = 0;
     for (const c of down) k |= KEYMAP[c] || 0;
     if (mouseAim) { if (mouse.buttons & 1) k |= 16; if (mouse.buttons & 2) k |= 32; }
-    return k;
+    return k | padBits | touchBits;
   }
   function pushInput() {
     const k = currentBits();
@@ -379,6 +390,8 @@
   let lockErrorAt = -1e9;
   document.addEventListener('pointerlockerror', () => { lockErrorAt = performance.now(); });
   document.addEventListener('mousemove', (e) => {
+    if (touchMode) return; // phones send fake mouse events after taps
+    if (Math.abs(e.movementX) + Math.abs(e.movementY) > 2 && aimSource !== 'mouse') { aimSource = 'mouse'; updateAimMode(); }
     if (pointerLocked) {
       // Locked: the mouse moves the crosshair relative to your player.
       // Ignore bogus jumps some browsers emit right after locking (a real flick is far smaller per event).
@@ -504,7 +517,7 @@
     const dpr = window.devicePixelRatio || 1;
     const W = canvas.width, H = canvas.height;
     const fw = (cfg ? cfg.pmx : 600) * 2 + 30, fh = (cfg ? cfg.pmy : 325) * 2 + 30;
-    const top = 52 * dpr;
+    const top = (innerHeight < 500 ? 8 : 52) * dpr;   // phones in landscape: let the field use the full height
     const scale = Math.min(W / fw, (H - top) / fh);
     view = { scale, ox: W / 2, oy: top + (H - top) / 2, dpr };
   }
@@ -666,11 +679,18 @@
   }
 
   // Works out the crosshair offset from your player, sends the aim angle, and returns your player.
+  function aimingWithPointer() { return mouseAim || aimSource !== 'mouse'; }
+  function updateAimMode() {
+    const want = aimingWithPointer();
+    if (want === aimModeSent || !myId) return;
+    aimModeSent = want; lastAimSent = null;
+    send({ t: 'aimMode', on: want, a: Math.atan2(aimOff.y, aimOff.x) });
+  }
   function sendAim(st) {
-    if (!mouseAim || !st || !myId) return null;
+    if (!aimingWithPointer() || !st || !myId) return null;
     const me = st.p.find((p) => p[0] === myId);
     if (!me) return null;
-    if (!pointerLocked && mouse.moved) {
+    if (aimSource === 'mouse' && !pointerLocked && mouse.moved) {
       // Not locked (menu open, or lock refused): follow the real mouse, still within the radius.
       const s = toScreen(me[1], me[2]);
       aimOff.x = (mouse.x - s.x) * view.dpr / view.scale;
@@ -774,7 +794,7 @@
 
   let lockHintShown = false;
   function updateLockHint() {
-    const show = canLockAim() && !pointerLocked;
+    const show = canLockAim() && !pointerLocked && !touchMode && aimSource === 'mouse';
     if (show !== lockHintShown) { lockHintShown = show; $('lockHint').classList.toggle('hidden', !show); }
   }
 
@@ -787,18 +807,21 @@
     if (!cfg) { drawIdle(); return; }
     ctx.setTransform(view.scale, 0, 0, view.scale, view.ox, view.oy);
 
+    pollPad();
+    sendMove();
     const playing = room.state === 'playing';
-    const st = playing ? stateAt() : null;
+    let st = playing ? stateAt() : null;
     drawField(st);
     drawGoals();
     if (st) {
+      let me = sendAim(st);
+      if (me && turnPct > 0) { st = predictOwnStick(st, me); me = st.p.find((p) => p[0] === myId); }
       for (const p of st.p) drawStick(p);
       for (const p of st.p) drawPlayer(p, roster.get(p[0]));
       drawBall(st.b);
       for (const p of st.p) { drawCharge(p); drawName(p, roster.get(p[0])); }
       drawFlashes(performance.now());
       updateHud(st);
-      const me = sendAim(st);
       if (me && roomScreen.classList.contains('hidden')) {
         // faint ring when the crosshair is held at the edge of the aim radius
         const R = aimRadius();
@@ -814,7 +837,205 @@
       drawBall([0, 0]);
     }
     updateLockHint();
+    updateTouchLayer();
+    if (touchMode) updateAimShoot();
   }
+
+  // Draw your own stick from your local aim instead of waiting for the server's copy, so it reacts
+  // without network delay. At 100% it points straight at your aim; in between it's a blend.
+  function predictOwnStick(st, me) {
+    const local = Math.atan2(aimOff.y, aimOff.x);
+    if (Math.hypot(aimOff.x, aimOff.y) < 0.5) return st;
+    const ang = lerpAngle(me[3], local, turnPct / 100);
+    const p = st.p.map((q) => (q[0] === myId ? [q[0], q[1], q[2], ang, q[4], q[5]] : q));
+    let b = st.b;
+    if (b[2] === myId) {
+      b = [me[1] + Math.cos(ang) * cfg.pocketDist, me[2] + Math.sin(ang) * cfg.pocketDist, myId];
+      b[0] = Math.max(-cfg.hw + cfg.ballR, Math.min(cfg.hw - cfg.ballR, b[0]));
+      b[1] = Math.max(-cfg.hh + cfg.ballR, Math.min(cfg.hh - cfg.ballR, b[1]));
+    }
+    return { ...st, p, b };
+  }
+
+  // ---------- stick response setting ----------
+  function showTurn() {
+    $('optTurn').value = turnPct;
+    $('optTurnVal').textContent = turnPct === 0 ? 'smooth' : turnPct === 100 ? 'instant' : turnPct + '%';
+  }
+  $('optTurn').addEventListener('input', (e) => {
+    turnPct = parseInt(e.target.value, 10) || 0;
+    try { localStorage.setItem('lax.turn', String(turnPct)); } catch { /* not saved */ }
+    showTurn();
+    send({ t: 'turn', v: turnPct / 100 });
+  });
+  showTurn();
+
+  // ---------- analog movement (controller / touch) ----------
+  function sendMove() {
+    const v = (touchMove.x || touchMove.y) ? touchMove : padMove;
+    const q = (n) => Math.round(n * 20) / 20;
+    const key = q(v.x) + ',' + q(v.y);
+    if (key !== lastMoveSent) { lastMoveSent = key; send({ t: 'move', x: q(v.x), y: q(v.y) }); }
+  }
+
+  // ---------- game controller (PS4 / Xbox / any standard pad) ----------
+  // Left stick = move, right stick = aim, R1 = throw (hold to charge), L1 = check, Options = menu.
+  const DEAD = 0.18;
+  let padIndex = null, padPrevButtons = [];
+  function padToast(text) {
+    const t = $('padToast'); t.textContent = text; t.classList.remove('hidden');
+    clearTimeout(padToast.timer); padToast.timer = setTimeout(() => t.classList.add('hidden'), 2500);
+  }
+  function setPadStatus(gp) {
+    $('padStatus').textContent = gp
+      ? `🎮 Controller connected: ${gp.id.replace(/\(.*?\)/g, '').trim() || 'gamepad'} — left stick move · right stick aim · R1 throw · L1 check · Options menu`
+      : '🎮 No controller detected — plug in a PS4 controller and press any button';
+  }
+  window.addEventListener('gamepadconnected', (e) => { padIndex = e.gamepad.index; setPadStatus(e.gamepad); padToast('🎮 Controller connected'); });
+  window.addEventListener('gamepaddisconnected', (e) => {
+    if (e.gamepad.index !== padIndex) return;
+    padIndex = null; padBits = 0; padMove = { x: 0, y: 0 }; pushInput(); setPadStatus(null); padToast('🎮 Controller disconnected');
+  });
+  function stick(x, y) {
+    const m = Math.hypot(x, y);
+    if (m < DEAD) return { x: 0, y: 0, m: 0 };
+    const k = Math.min(1, (m - DEAD) / (1 - DEAD)) / m;   // rescale so the dead zone edge is 0
+    return { x: x * k, y: y * k, m: Math.min(1, (m - DEAD) / (1 - DEAD)) };
+  }
+  function pollPad() {
+    if (!navigator.getGamepads) return;
+    if (padIndex === null) {
+      // some browsers only announce a controller once a button is pressed; also pick up one that's already there
+      const found = Array.from(navigator.getGamepads()).find((g) => g && g.connected);
+      if (!found) return;
+      padIndex = found.index; setPadStatus(found);
+    }
+    const gp = navigator.getGamepads()[padIndex];
+    if (!gp) return;
+    const ax = gp.axes, bt = gp.buttons;
+    // "standard" layout: right stick on axes 2/3. Some Linux browsers report raw layouts (right stick on 3/4).
+    const rIdx = gp.mapping === 'standard' || ax.length < 5 ? [2, 3] : [3, 4];
+    const L = stick(ax[0] || 0, ax[1] || 0), R = stick(ax[rIdx[0]] || 0, ax[rIdx[1]] || 0);
+    const pressed = (i) => !!(bt[i] && (bt[i].pressed || bt[i].value > 0.5));
+    const inGame = room.state === 'playing' && roomScreen.classList.contains('hidden') && !chatOpen;
+
+    // Options (9) opens/closes the room menu
+    if (pressed(9) && !padPrevButtons[9] && room.state === 'playing') {
+      roomScreen.classList.toggle('hidden'); releaseKeys(); unlockAim();
+    }
+    padPrevButtons = bt.map((b) => !!(b && b.pressed));
+
+    padMove = inGame ? { x: L.x, y: L.y } : { x: 0, y: 0 };
+    const bits = inGame ? (pressed(5) ? 16 : 0) | (pressed(4) ? 32 : 0) : 0;
+    if (inGame && (L.m > 0 || R.m > 0 || bits) && aimSource !== 'pad') { aimSource = 'pad'; unlockAim(); updateAimMode(); }
+    if (inGame && R.m > 0.25) {
+      const a = Math.atan2(R.y, R.x);
+      aimOff.x = Math.cos(a) * PAD_AIM_DIST; aimOff.y = Math.sin(a) * PAD_AIM_DIST;
+    }
+    if (bits !== padBits) { padBits = bits; pushInput(); }
+  }
+
+  // ---------- touch controls (phones / tablets) ----------
+  // Left half: a joystick appears wherever your thumb lands and moves you. Right half: same, for aiming.
+  // Aim stick extras: drag past its outer ring while you have the ball to start charging a shot, let go to
+  // throw (the longer you hold out there, the harder). Double-tap the right side to check.
+  const TOUCH_R = 60;
+  const DOUBLE_TAP_MS = 320, TAP_MAX_MS = 250, TAP_MAX_MOVE = 14;
+  let lastAimTap = 0;
+  const iHaveBall = () => snaps.length > 0 && snaps[snaps.length - 1].b[2] === myId;
+  function setShoot(on) {
+    const bits = on ? 16 : 0;
+    if ((touchBits & 16) !== bits) { touchBits = (touchBits & ~16) | bits; pushInput(); }
+  }
+  function pulseCheck() {
+    touchBits |= 32; pushInput();
+    setTimeout(() => { touchBits &= ~32; pushInput(); }, 120);   // the server checks on the press
+  }
+  // Called every frame so catching the ball while your thumb is already past the ring starts the charge too.
+  function updateAimShoot() {
+    const s = touchSticks.aim;
+    const want = !!(s && s.beyond && (iHaveBall() || (touchBits & 16)));
+    setShoot(want);
+    if (s) s.base.classList.toggle('armed', want);
+  }
+  const touchSticks = {};
+  function enableTouch() {
+    if (touchMode) return;
+    touchMode = true;
+    document.body.classList.add('touch');
+    aimSource = 'touch'; mouseAim = true; unlockAim(); updateAimMode();
+  }
+  window.addEventListener('touchstart', enableTouch, { passive: true });
+  function updateTouchLayer() {
+    const show = touchMode && room.state === 'playing' && roomScreen.classList.contains('hidden') && !chatOpen;
+    if (show === updateTouchLayer.shown) return;
+    updateTouchLayer.shown = show;
+    $('touchLayer').classList.toggle('hidden', !show);
+    if (!show) resetTouch();
+  }
+  function resetTouch() {
+    for (const k of Object.keys(touchSticks)) endStick(k);
+    touchBits = 0; pushInput();
+  }
+  function setupStick(zoneId, kind) {
+    const zone = $(zoneId), base = zone.querySelector('.tbase'), knob = zone.querySelector('.tknob');
+    zone.addEventListener('pointerdown', (e) => {
+      if (touchSticks[kind]) return;
+      e.preventDefault();
+      zone.setPointerCapture(e.pointerId);
+      const r = zone.getBoundingClientRect();
+      touchSticks[kind] = { id: e.pointerId, ox: e.clientX, oy: e.clientY, base, knob, zone, t0: performance.now(), maxD: 0, beyond: false };
+      base.style.left = (e.clientX - r.left) + 'px'; base.style.top = (e.clientY - r.top) + 'px';
+      knob.style.transform = 'translate(0px, 0px)';
+      base.classList.add('on');
+      if (kind === 'aim') aimSource = 'touch';
+    });
+    zone.addEventListener('pointermove', (e) => {
+      const s = touchSticks[kind];
+      if (!s || s.id !== e.pointerId) return;
+      let dx = e.clientX - s.ox, dy = e.clientY - s.oy;
+      const d = Math.hypot(dx, dy);
+      s.maxD = Math.max(s.maxD, d);
+      if (kind === 'aim') s.beyond = d > TOUCH_R;
+      if (d > TOUCH_R) { dx *= TOUCH_R / d; dy *= TOUCH_R / d; }
+      knob.style.transform = `translate(${dx}px, ${dy}px)`;
+      const v = stick(dx / TOUCH_R, dy / TOUCH_R);
+      if (kind === 'move') touchMove = { x: v.x, y: v.y };
+      else {
+        if (v.m > 0.15) {
+          const a = Math.atan2(dy, dx);
+          aimOff.x = Math.cos(a) * PAD_AIM_DIST; aimOff.y = Math.sin(a) * PAD_AIM_DIST;
+        }
+        updateAimShoot();
+      }
+    });
+    const end = (e) => {
+      const s = touchSticks[kind];
+      if (!s || s.id !== e.pointerId) return;
+      if (kind === 'aim' && e.type === 'pointerup') {
+        const now = performance.now();
+        const isTap = now - s.t0 < TAP_MAX_MS && s.maxD < TAP_MAX_MOVE;
+        if (isTap && now - lastAimTap < DOUBLE_TAP_MS) { pulseCheck(); lastAimTap = 0; }
+        else lastAimTap = isTap ? now : 0;
+      }
+      endStick(kind);
+    };
+    zone.addEventListener('pointerup', end);
+    zone.addEventListener('pointercancel', end);
+  }
+  function endStick(kind) {
+    const s = touchSticks[kind];
+    if (!s) return;
+    s.base.classList.remove('on', 'armed');
+    delete touchSticks[kind];
+    if (kind === 'move') touchMove = { x: 0, y: 0 };   // aim keeps its last direction
+    else setShoot(false);                               // letting go of a charged aim stick throws
+  }
+  setupStick('tzLeft', 'move');
+  setupStick('tzRight', 'aim');
+  $('touchMenu').addEventListener('click', () => { roomScreen.classList.remove('hidden'); releaseKeys(); });
+  $('chatBtn').addEventListener('click', () => { if (room.state === 'playing') roomScreen.classList.add('hidden'); openChat(); });
+
   function drawIdle() {
     // decorative field behind the join screen
     cfg = null;
