@@ -44,11 +44,19 @@
   let padBits = 0, touchBits = 0;              // throw/check buttons held on the controller / touch button
   let padMove = { x: 0, y: 0 }, touchMove = { x: 0, y: 0 }, lastMoveSent = '0,0';
   let touchMode = false;
-  const PAD_AIM_DIST = 140;                     // how far ahead the crosshair sits when aiming with a stick
   // Stick response: 0 = smoothed (original feel), 100 = the stick snaps straight to your aim.
   let turnPct = 0;
   try { turnPct = Math.max(0, Math.min(100, parseInt(localStorage.getItem('lax.turn') || '0', 10) || 0)); } catch { /* default */ }
   const aimRadius = () => (cfg ? cfg.hw * 2 : 1120) * AIM_RADIUS_FRAC;
+  // Stick aim distance: how far out the crosshair sits when aiming with a controller or phone stick,
+  // as a % of the furthest you can aim (the faint ring). 25% is the old fixed distance.
+  // Shoot drag: how far (px) your thumb must travel from where it landed before the aim stick starts a shot.
+  const loadNum = (key, def, lo, hi) => {
+    try { const v = parseFloat(localStorage.getItem(key)); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def; } catch { return def; }
+  };
+  let stickAimPct = loadNum('lax.stickAim', 25, 10, 100);
+  let shootDrag = loadNum('lax.shootDrag', 90, 60, 200);
+  const stickAimDist = () => aimRadius() * stickAimPct / 100;
 
   // Crosshair settings (saved per browser)
   const XH_DEFAULT = { shape: 'crossdot', color: '#00ff66', size: 9, thick: 2, gap: 4, alpha: 1, outline: true, sens: 1 };
@@ -870,6 +878,30 @@
   });
   showTurn();
 
+  // ---------- phone & controller aim settings ----------
+  function showStickOpts() {
+    $('optStickAim').value = stickAimPct;
+    $('optStickAimVal').textContent = stickAimPct + '%';
+    $('optShootDrag').value = shootDrag;
+    $('optShootDragVal').textContent = Math.round(shootDrag) + ' px';
+    $('tzRight').style.setProperty('--shoot', shootDrag + 'px');
+  }
+  $('optStickAim').addEventListener('input', (e) => {
+    stickAimPct = parseInt(e.target.value, 10) || 25;
+    try { localStorage.setItem('lax.stickAim', String(stickAimPct)); } catch { /* not saved */ }
+    if (aimSource !== 'mouse') {                    // move the crosshair now so you can see the new distance
+      const l = Math.hypot(aimOff.x, aimOff.y) || 1;
+      aimOff.x *= stickAimDist() / l; aimOff.y *= stickAimDist() / l;
+    }
+    showStickOpts();
+  });
+  $('optShootDrag').addEventListener('input', (e) => {
+    shootDrag = parseInt(e.target.value, 10) || 90;
+    try { localStorage.setItem('lax.shootDrag', String(shootDrag)); } catch { /* not saved */ }
+    showStickOpts();
+  });
+  showStickOpts();
+
   // ---------- analog movement (controller / touch) ----------
   function sendMove() {
     const v = (touchMove.x || touchMove.y) ? touchMove : padMove;
@@ -930,15 +962,16 @@
     if (inGame && (L.m > 0 || R.m > 0 || bits) && aimSource !== 'pad') { aimSource = 'pad'; unlockAim(); updateAimMode(); }
     if (inGame && R.m > 0.25) {
       const a = Math.atan2(R.y, R.x);
-      aimOff.x = Math.cos(a) * PAD_AIM_DIST; aimOff.y = Math.sin(a) * PAD_AIM_DIST;
+      aimOff.x = Math.cos(a) * stickAimDist(); aimOff.y = Math.sin(a) * stickAimDist();
     }
     if (bits !== padBits) { padBits = bits; pushInput(); }
   }
 
   // ---------- touch controls (phones / tablets) ----------
   // Left half: a joystick appears wherever your thumb lands and moves you. Right half: same, for aiming.
-  // Aim stick extras: drag past its outer ring while you have the ball to start charging a shot, let go to
-  // throw (the longer you hold out there, the harder). Double-tap the right side to check.
+  // Aim stick extras: drag out to the dashed shoot ring (distance set by "Phone shoot drag") while you have
+  // the ball to start charging a shot, let go to throw (the longer you hold out there, the harder).
+  // Inside that ring you can aim and carry the ball without shooting. Double-tap the right side to check.
   const TOUCH_R = 60;
   const DOUBLE_TAP_MS = 320, TAP_MAX_MS = 250, TAP_MAX_MOVE = 14;
   let lastAimTap = 0;
@@ -996,7 +1029,7 @@
       let dx = e.clientX - s.ox, dy = e.clientY - s.oy;
       const d = Math.hypot(dx, dy);
       s.maxD = Math.max(s.maxD, d);
-      if (kind === 'aim') s.beyond = d > TOUCH_R;
+      if (kind === 'aim') s.beyond = d > shootDrag;
       if (d > TOUCH_R) { dx *= TOUCH_R / d; dy *= TOUCH_R / d; }
       knob.style.transform = `translate(${dx}px, ${dy}px)`;
       const v = stick(dx / TOUCH_R, dy / TOUCH_R);
@@ -1004,7 +1037,7 @@
       else {
         if (v.m > 0.15) {
           const a = Math.atan2(dy, dx);
-          aimOff.x = Math.cos(a) * PAD_AIM_DIST; aimOff.y = Math.sin(a) * PAD_AIM_DIST;
+          aimOff.x = Math.cos(a) * stickAimDist(); aimOff.y = Math.sin(a) * stickAimDist();
         }
         updateAimShoot();
       }

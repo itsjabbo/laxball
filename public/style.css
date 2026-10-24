@@ -176,3 +176,8 @@ body.touch #chat { top: 64px; bottom: auto; }
 .tbase.armed { border-color: #ffd54f; background: rgba(255,213,79,.18); box-shadow: 0 0 0 4px rgba(255,213,79,.25); }
 .tbase.armed .tknob { background: rgba(255,213,79,.6); border-color: #ffd54f; }
 .thint { white-space: nowrap; font-size: 11px; letter-spacing: 1px; }
+
+/* shoot ring around the aim stick: drag out to it (with the ball) to start a shot. Size = "Phone shoot drag". */
+.tshoot { position: absolute; left: 50%; top: 50%; width: calc(var(--shoot, 90px) * 2); height: calc(var(--shoot, 90px) * 2);
+  transform: translate(-50%, -50%); border-radius: 50%; border: 2px dashed rgba(255,255,255,.3); pointer-events: none; }
+.tbase.armed .tshoot { border-style: solid; border-color: #ffd54f; }

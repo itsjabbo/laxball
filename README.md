@@ -66,9 +66,16 @@ Controllers need the game opened over **https** (your `https://…ts.net` addres
 
 Open the game on a phone and turn it sideways. Touch anywhere on the **left half** to get a movement joystick under your thumb, and anywhere on the **right half** for an aiming joystick.
 
-- **Shoot / pass:** while you have the ball, drag the aim stick **past its outer ring**. The ring turns yellow and the shot starts charging; let go to throw. The longer you stay past the ring, the harder the throw.
+- **Shoot / pass:** while you have the ball, drag the aim stick out to the **dashed shoot ring**. It turns yellow and the shot starts charging; let go to throw. The longer you stay out there, the harder the throw. Anywhere inside the dashed ring you can aim and carry the ball without shooting.
 - **Check:** **double-tap** anywhere on the right half when you don't have the ball.
 - The ☰ button opens the room menu.
+
+### Phone and controller aim settings
+
+Both are in the room menu and saved per browser:
+
+- **Stick aim distance** (phone and controller): how far from your player the crosshair sits when you aim with a stick, from **Close** to **Far** (100% = the faint aim-limit ring). This is the stick version of moving your mouse further away on PC. Default 25%.
+- **Phone shoot drag**: how far your thumb must drag the aim stick (60–200 px from where it landed) before a shot starts. Raise it if you shoot by accident while carrying the ball. Default 90 px.
 
 ### Stick response
 
