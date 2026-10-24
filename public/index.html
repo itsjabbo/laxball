@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>LaxBall</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
@@ -32,6 +34,15 @@
   <div id="chatBadge" class="hidden"></div>
 
   <div id="lockHint" class="hidden">Click to lock your aim</div>
+  <div id="padToast" class="hidden"></div>
+
+  <!-- touch controls (phones / tablets): left half = move stick, right half = aim stick -->
+  <div id="touchLayer" class="hidden">
+    <div class="tzone" id="tzLeft"><div class="tbase"><div class="tknob"></div></div><span class="thint">move</span></div>
+    <div class="tdivider"></div>
+    <div class="tzone" id="tzRight"><div class="tbase"><div class="tknob"></div></div><span class="thint">aim · drag out = shoot · double-tap = check</span></div>
+    <button id="touchMenu" type="button" aria-label="Menu">☰</button>
+  </div>
   <div id="hint" class="hidden">Esc menu · / chat · F fullscreen</div>
 
   <!-- join screen -->
@@ -52,6 +63,7 @@
       <div class="roomHead">
         <div class="logo small">Lax<span>Ball</span></div>
         <div id="roomState" class="muted"></div>
+        <button id="chatBtn" class="btn ghost small" title="Chat (/)">💬 Chat</button>
         <button id="fsBtn" class="btn ghost small" title="Toggle fullscreen (F)">⛶ Fullscreen</button>
         <button id="closeRoom" class="btn ghost hidden" title="Back to the game (Esc)">✕</button>
       </div>
@@ -99,11 +111,18 @@
       <div class="roomFoot">
         <div class="controls">
           <b>Move</b> Arrows / WASD &nbsp; <b>Throw</b> hold &amp; release Space or left click (longer = harder) &nbsp;
-          <b>Check</b> X, Shift or right click &nbsp; <b>Chat</b> / &nbsp; <b>Fullscreen</b> F &nbsp; <b>Menu</b> Esc
+          <b>Check</b> X, Shift or right click &nbsp; <b>Chat</b> / &nbsp; <b>Fullscreen</b> F &nbsp; <b>Menu</b> Esc<br><b>Controller</b> left stick move · right stick aim · R1 throw · L1 check · Options menu &nbsp; <b>Phone</b> left thumb move · right thumb aim (drag past the ring to shoot, double-tap to check)
         </div>
         <div class="opts">
           <label><input type="checkbox" id="optMouse"> Aim with mouse (cursor locks to the game)</label>
           <label><input type="checkbox" id="optSound" checked> Sound</label>
+          <label class="rng">Stick response
+            <span class="muted small">Smooth</span>
+            <input type="range" id="optTurn" min="0" max="100" step="5">
+            <span class="muted small">Instant</span>
+            <b id="optTurnVal"></b>
+          </label>
+          <span id="padStatus" class="muted small">🎮 No controller detected — plug in a PS4 controller and press any button</span>
         </div>
 
         <details id="xhairPanel">

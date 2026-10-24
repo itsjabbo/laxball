@@ -108,6 +108,7 @@ class Game {
       id, name, avatar, bot, team: TEAM_SPEC, joinOrder: id,
       x: 0, y: 0, vx: 0, vy: 0, r: CFG.playerR, invMass: PHYS.playerInvMass,
       angle: 0, input: 0, prevInput: 0, aimMode: bot, aim: 0,
+      turn: 0, moveX: 0, moveY: 0,   // turn: 0 = smoothed stick, 1 = instant; move: analog stick (-1..1)
       charge: 0, charging: false, noCatch: 0, checkCd: 0, swing: 0, protect: 0, botState: null,
     };
     this.players.set(id, p);
@@ -237,20 +238,27 @@ class Game {
       if (!c || c.team === TEAM_SPEC) b.carrier = 0;
       else this.attachBall(c);
     }
+    let goalSide = 0;
     if (!b.carrier) {
-      b.x += b.vx; b.y += b.vy;
+      // Move in small sub-steps so a fast ball can't skip through the cage's thin back wall,
+      // and only count a goal when the ball crosses the goal line between the posts from the field side.
+      const speed = Math.hypot(b.vx, b.vy);
+      const n = Math.max(1, Math.ceil(speed / (CFG.ballR * 0.5)));
+      for (let i = 0; i < n && !goalSide; i++) {
+        const px = b.x, py = b.y;
+        b.x += b.vx / n; b.y += b.vy / n;
+        goalSide = this.crossedGoalLine(px, py, b.x, b.y);
+        if (!goalSide) this.collideBallStatic();
+      }
       b.vx *= PHYS.bDamp; b.vy *= PHYS.bDamp;
-      this.tryCatch(active);
-      if (!b.carrier) this.collideLooseBall(active);
+      if (!goalSide) {
+        this.tryCatch(active);
+        if (!b.carrier) this.collideLooseBall(active);
+      }
     }
 
     // 5. goals
-    if (!b.carrier && (this.phase === 'play' || this.phase === 'kickoff')) {
-      for (const side of [-1, 1]) {
-        const g = GOALS[side];
-        if (inTriangle(b.x, b.y, g.top, g.bot, g.apex)) { this.goalScored(side); break; }
-      }
-    }
+    if (goalSide && (this.phase === 'play' || this.phase === 'kickoff')) this.goalScored(goalSide);
 
     // 6. clock & phases
     if (this.phase === 'play') {
@@ -298,6 +306,10 @@ class Game {
     if (dx || dy) {
       const l = Math.hypot(dx, dy);
       p.vx += (dx / l) * accel; p.vy += (dy / l) * accel;
+    } else if (p.moveX || p.moveY) {
+      // analog stick (controller / touch): a partly-pushed stick moves you more slowly
+      const m = Math.hypot(p.moveX, p.moveY), k = Math.min(1, m) / m;
+      p.vx += p.moveX * k * accel; p.vy += p.moveY * k * accel;
     }
     p.vx *= PHYS.pDamp; p.vy *= PHYS.pDamp;
     p.x += p.vx; p.y += p.vy;
@@ -305,7 +317,10 @@ class Game {
     let target = null;
     if (p.aimMode) target = p.aim;
     else if (dx || dy) target = Math.atan2(dy, dx);
-    if (target !== null) p.angle = normAngle(lerpAngle(p.angle, target, PHYS.turnRate));
+    if (target !== null) {
+      const rate = PHYS.turnRate + (1 - PHYS.turnRate) * p.turn; // turn 1 = stick snaps straight to the aim
+      p.angle = normAngle(lerpAngle(p.angle, target, rate));
+    }
 
     if (p.charging && !throwDown) {
       if (hasBall) this.throwBall(p);
@@ -426,11 +441,32 @@ class Game {
     }
   }
 
+  // Returns the goal side (-1 / 1) if the ball's path from (x0,y0) to (x1,y1) crossed a goal line
+  // between the posts while travelling into the net; 0 otherwise.
+  crossedGoalLine(x0, y0, x1, y1) {
+    for (const side of [-1, 1]) {
+      const gx = side * CFG.goalX;
+      const before = side * (x0 - gx), after = side * (x1 - gx);
+      if (before < 0 && after >= 0) {            // was in front of the line, now on or behind it
+        const t = before / (before - after);
+        const yc = y0 + (y1 - y0) * t;
+        if (Math.abs(yc) < CFG.postY) return side;
+      }
+    }
+    return 0;
+  }
+
   collideLooseBall(active) {
     const b = this.ball;
     for (const p of active) {
       if (collideCircles(p, b, 0.5) > 0) this.touch(p);
     }
+    this.collideBallStatic();
+  }
+
+  // Ball against the cages, posts and field walls.
+  collideBallStatic() {
+    const b = this.ball;
     let hit = 0;
     for (const side of [-1, 1]) {
       const g = GOALS[side];

@@ -105,6 +105,19 @@ wss.on('connection', (ws, req) => {
       case 'aim':
         if (typeof m.a === 'number' && isFinite(m.a)) me.aim = m.a;
         break;
+      case 'move': {
+        // analog movement from a controller or touch joystick, each axis -1..1
+        const x = Number(m.x), y = Number(m.y);
+        me.moveX = isFinite(x) ? Math.max(-1, Math.min(1, x)) : 0;
+        me.moveY = isFinite(y) ? Math.max(-1, Math.min(1, y)) : 0;
+        break;
+      }
+      case 'turn': {
+        // stick response: 0 = smoothed (original feel), 1 = instant
+        const v = Number(m.v);
+        if (isFinite(v)) me.turn = Math.max(0, Math.min(1, v));
+        break;
+      }
       case 'aimMode':
         me.aimMode = !!m.on;
         if (typeof m.a === 'number' && isFinite(m.a)) me.aim = m.a; else me.aim = me.angle;
