@@ -85,6 +85,10 @@ Mouse aim is on by default: the stick points at your crosshair, which follows yo
 
 **Crosshair:** open the room menu (Esc) and expand **Crosshair** to pick a shape (cross, cross + dot, T, X, dot, circle, circle + dot, chevron, square, triangle), a colour, size, thickness, gap, opacity, outline and mouse sensitivity. Settings are saved in your browser. To change the aim limit, edit `AIM_RADIUS_FRAC` near the top of `public/client.js` (0.5 = half the field).
 
+**Ping:** the top-right corner (and the room menu header) shows your round trip to the server, refreshed every 2 seconds: green under 80 ms, yellow under 160 ms, red when it's laggy, and "No response" if the server stops answering.
+
+The game screen itself shows no instructions; all the controls are listed at the bottom of the room menu.
+
 Open chat with `/` and type `/avatar 😎` to change your avatar.
 
 ### Rules

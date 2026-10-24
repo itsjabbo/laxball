@@ -33,17 +33,16 @@
   </div>
   <div id="chatBadge" class="hidden"></div>
 
-  <div id="lockHint" class="hidden">Click to lock your aim</div>
+  <div id="ping" class="hidden"></div>
   <div id="padToast" class="hidden"></div>
 
   <!-- touch controls (phones / tablets): left half = move stick, right half = aim stick -->
   <div id="touchLayer" class="hidden">
-    <div class="tzone" id="tzLeft"><div class="tbase"><div class="tknob"></div></div><span class="thint">move</span></div>
+    <div class="tzone" id="tzLeft"><div class="tbase"><div class="tknob"></div></div></div>
     <div class="tdivider"></div>
-    <div class="tzone" id="tzRight"><div class="tbase"><div class="tshoot"></div><div class="tknob"></div></div><span class="thint">aim · drag to dashed ring = shoot · double-tap = check</span></div>
+    <div class="tzone" id="tzRight"><div class="tbase"><div class="tshoot"></div><div class="tknob"></div></div></div>
     <button id="touchMenu" type="button" aria-label="Menu">☰</button>
   </div>
-  <div id="hint" class="hidden">Esc menu · / chat · F fullscreen</div>
 
   <!-- join screen -->
   <div id="joinScreen" class="overlay">
@@ -63,6 +62,7 @@
       <div class="roomHead">
         <div class="logo small">Lax<span>Ball</span></div>
         <div id="roomState" class="muted"></div>
+        <span id="pingRoom" class="hidden"></span>
         <button id="chatBtn" class="btn ghost small" title="Chat (/)">💬 Chat</button>
         <button id="fsBtn" class="btn ghost small" title="Toggle fullscreen (F)">⛶ Fullscreen</button>
         <button id="closeRoom" class="btn ghost hidden" title="Back to the game (Esc)">✕</button>

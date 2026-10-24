@@ -136,13 +136,50 @@
       $('hud').classList.add('hidden');
       $('joinStatus').textContent = myId ? 'Disconnected from the server. Join again?' : 'Could not connect to the server.';
       myId = 0; snaps = []; roster = new Map();
+      pingMs = null; showPing();
     };
   }
-  function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+
+  // ---------- ping / connection status ----------
+  // Every 2 s we time a round trip to the server. Shown top-right in game and in the menu header.
+  let pingMs = null, lastPong = 0;
+  function onPong(m) {
+    const rtt = performance.now() - Number(m.c);
+    if (!isFinite(rtt) || rtt < 0) return;
+    pingMs = pingMs === null ? rtt : pingMs * 0.5 + rtt * 0.5;
+    lastPong = performance.now();
+    showPing();
+  }
+  function showPing() {
+    const online = ws && ws.readyState === 1 && myId;
+    let text = '', cls = 'hidden';
+    if (online) {
+      if (pingMs === null) { text = 'Ping …'; cls = 'ok'; }
+      else if (performance.now() - lastPong > 5000) { text = 'No response'; cls = 'bad'; }
+      else {
+        const ms = Math.round(pingMs);
+        text = ms + ' ms'; cls = ms < 80 ? 'good' : ms < 160 ? 'ok' : 'bad';
+      }
+    }
+    for (const id of ['ping', 'pingRoom']) {
+      const el = $(id);
+      el.className = cls; el.textContent = text;
+      el.title = 'Round trip to the server. Green under 80 ms, yellow under 160 ms, red is laggy.';
+    }
+  }
+  setInterval(() => {
+    if (ws && ws.readyState === 1 && myId) send({ t: 'ping', c: performance.now() });
+    showPing();
+  }, 2000);
+  function send(m) {
+    if (!ws || ws.readyState !== 1) return false;
+    ws.send(JSON.stringify(m)); return true;
+  }
 
   // ---------- messages ----------
   function onMessage(m) {
     switch (m.t) {
+      case 'pong': onPong(m); break;
       case 'welcome':
         myId = m.id; cfg = m.cfg; checkTicks = m.phys.checkTicks;
         joinScreen.classList.add('hidden');
@@ -158,7 +195,6 @@
         if (prevState === 'playing' && m.state !== 'playing') { unlockAim(); roomScreen.classList.remove('hidden'); snaps = []; }
         if (myTeam() === 0) unlockAim();
         $('hud').classList.toggle('hidden', m.state !== 'playing');
-        $('hint').classList.toggle('hidden', m.state !== 'playing');
         renderRoom();
         break;
       }
@@ -800,11 +836,7 @@
   $('xhReset').addEventListener('click', () => { xh = { ...XH_DEFAULT }; syncXhairUI(); saveXhair(); });
   syncXhairUI();
 
-  let lockHintShown = false;
-  function updateLockHint() {
-    const show = canLockAim() && !pointerLocked && !touchMode && aimSource === 'mouse';
-    if (show !== lockHintShown) { lockHintShown = show; $('lockHint').classList.toggle('hidden', !show); }
-  }
+  function updateLockHint() { /* in-game instructions removed: how to play lives in the room menu */ }
 
   function frame() {
     requestAnimationFrame(frame);
@@ -907,7 +939,7 @@
     const v = (touchMove.x || touchMove.y) ? touchMove : padMove;
     const q = (n) => Math.round(n * 20) / 20;
     const key = q(v.x) + ',' + q(v.y);
-    if (key !== lastMoveSent) { lastMoveSent = key; send({ t: 'move', x: q(v.x), y: q(v.y) }); }
+    if (key !== lastMoveSent && send({ t: 'move', x: q(v.x), y: q(v.y) })) lastMoveSent = key;
   }
 
   // ---------- game controller (PS4 / Xbox / any standard pad) ----------
@@ -1013,9 +1045,11 @@
   function setupStick(zoneId, kind) {
     const zone = $(zoneId), base = zone.querySelector('.tbase'), knob = zone.querySelector('.tknob');
     zone.addEventListener('pointerdown', (e) => {
-      if (touchSticks[kind]) return;
+      // A new thumb on this half always takes over. Before, a stick whose release the browser never
+      // reported stayed "held" forever and ignored new touches, which is what made it get stuck.
+      if (touchSticks[kind]) endStick(kind);
       e.preventDefault();
-      zone.setPointerCapture(e.pointerId);
+      try { zone.setPointerCapture(e.pointerId); } catch { /* still works without capture */ }
       const r = zone.getBoundingClientRect();
       touchSticks[kind] = { id: e.pointerId, ox: e.clientX, oy: e.clientY, base, knob, zone, t0: performance.now(), maxD: 0, beyond: false };
       base.style.left = (e.clientX - r.left) + 'px'; base.style.top = (e.clientY - r.top) + 'px';
@@ -1055,7 +1089,22 @@
     };
     zone.addEventListener('pointerup', end);
     zone.addEventListener('pointercancel', end);
+    zone.addEventListener('lostpointercapture', end);
+    zone.addEventListener('contextmenu', (e) => e.preventDefault());   // long-press menu would steal the touch
   }
+  // Safety net: touch events report which fingers are still down. Any stick with no finger left on its
+  // half gets released, even if the browser lost the pointerup (system gestures, notifications, etc.).
+  function sweepSticks(e) {
+    for (const k of Object.keys(touchSticks)) {
+      const zone = touchSticks[k].zone;
+      const held = [...e.touches].some((t) => t.target instanceof Node && zone.contains(t.target));
+      if (!held) endStick(k);
+    }
+  }
+  window.addEventListener('touchend', sweepSticks, { capture: true, passive: true });
+  window.addEventListener('touchcancel', sweepSticks, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) resetTouch(); });
+  window.addEventListener('blur', () => { if (touchMode) resetTouch(); });
   function endStick(kind) {
     const s = touchSticks[kind];
     if (!s) return;

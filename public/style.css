@@ -181,3 +181,14 @@ body.touch #chat { top: 64px; bottom: auto; }
 .tshoot { position: absolute; left: 50%; top: 50%; width: calc(var(--shoot, 90px) * 2); height: calc(var(--shoot, 90px) * 2);
   transform: translate(-50%, -50%); border-radius: 50%; border: 2px dashed rgba(255,255,255,.3); pointer-events: none; }
 .tbase.armed .tshoot { border-style: solid; border-color: #ffd54f; }
+
+/* ping / connection status: top-right in game, and in the room menu header */
+#ping { position: fixed; top: 10px; right: max(12px, env(safe-area-inset-right)); z-index: 6; pointer-events: none;
+  background: rgba(18,24,27,.8); border: 1px solid #0d1215; border-radius: 4px; padding: 3px 9px; font-size: 13px;
+  font-weight: 600; font-variant-numeric: tabular-nums; }
+#pingRoom { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#ping::before, #pingRoom::before { content: "●"; margin-right: 5px; }
+#ping.good, #pingRoom.good { color: #7ddc8f; }
+#ping.ok, #pingRoom.ok { color: #ffd54f; }
+#ping.bad, #pingRoom.bad { color: #ff6b5e; }
+#touchLayer { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
